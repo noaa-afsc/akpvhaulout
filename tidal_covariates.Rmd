@@ -1,0 +1,198 @@
+---
+title: "Assigning Tidal Covariates to Harbor Seal Haul-out"
+subtitle: ""
+draft: true
+author:
+- name: Josh M. London
+  affiliation: 1
+address:
+- code: 1
+  address: Alaska Fisheries Science Center, NOAA, Seattle, Washington, USA 
+  email: josh.london@noaa.gov
+  orcid: orcid.org/0000-0002-3647-5046
+date: "`r format(Sys.Date(), '%d %B, %Y')`"
+disclaimer: >
+  The scientific results and conclusions, as well as any views or opinions 
+  expressed herein, are those of the author(s) and do not necessarily reflect 
+  those of NOAA or the Department of Commerce.
+abstract: >
+  This document describes the process of assigning tidal covariates to Alaska
+  harbor seal haul-out behavior derived from telemetry deployments. The data
+  for haul-out behavior are pulled from the `pephaulout` R data package. The
+  tidal calculations are determined via the XTide library which must be 
+  installed along with the `tidextractr` package.
+output: 
+  uswebr::html_uswds:
+    number_sections: FALSE
+---
+
+```{r global-options, include=FALSE}
+  knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+```{r}
+library(pephaulout)
+library(tidextractr)
+library(tidyverse)
+```
+
+## percent timelines data w/ locations
+
+the `pephaulout` package has haulout data from all species deployments within
+the PEP. Here, we'll filter out just the "Pv" species. We will also create
+a `tide_dt` column that is set to the half-hour. We'll use this for our tidal
+covariate prediction so it represents the mid-point of the hourly haul-out
+behavior.
+
+```{r}
+data(tbl_percent_locs)
+
+tbl_percent_locs <- tbl_percent_locs %>% 
+  dplyr::ungroup() %>% 
+  dplyr::filter(species == "Pv") %>% 
+  dplyr::arrange(speno, date_time) %>% 
+  dplyr::mutate(tide_dt = date_time + lubridate::dhours(0.5)) 
+tbl_percent_locs %>% glimpse()
+```
+
+## survey polygons w/ tide stations
+
+Next, we need to associate all of the haul-out behavior locations with a
+survey polygon (and, thus, the assigned tidal station for that polygon).
+
+We'll get the survey polygons from the PEP PostgreSQL database.
+
+```{r db-connect}
+library(DBI)
+con <- dbConnect(RPostgres::Postgres(), 
+                 host = Sys.getenv("PEP_IP"),
+                 user = keyringr::get_kc_account("pgpep_londonj"),
+                 password = keyringr::decrypt_kc_pw("pgpep_londonj"),
+                 dbname = "pep")
+```
+
+The `akpvpolys` object is an `sf` object that represents each of the survey
+polygons. For those haul-out locations within a polygon, we can join easily
+using the `st_intersets` function. However, there are a significant number
+of locations outside of a polygon and we will want to link those to the 
+nearest polygon. For this, we'll rely on the `nabor` package. This package
+can only work with point data, so we'll create a `akpvpolys_cent` object
+that represents the centroids of each survey polygon.
+
+```{r}
+library(sf)
+akpvpolys <- st_read_db(con, query = "SELECT * FROM surv_pv_cst.geo_polys",
+                       geom_column = 'geom') %>% 
+  sf::st_transform(3571)
+akpvpolys_cent <- akpvpolys %>% sf::st_centroid()
+
+poly_idx <- tbl_percent_locs %>%
+  sf::st_intersects(akpvpolys) %>% 
+  purrr::map_int(1,.default = NA)
+
+akpvpolys <- akpvpolys %>% 
+  sf::st_set_geometry(NULL)
+
+tbl_percent_locs <- tbl_percent_locs %>%
+  dplyr::bind_cols(akpvpolys[poly_idx,c("polyid","station")])
+```
+
+At this point, `tbl_percent_locs` has `polyid` and `station` assigned for any
+location that falls within a survey polygon. For the remaining locations, we'll
+need to convert the point coordinates to a matrix and then relay on the
+`nabor::knn()` function to determine the nearest neighbor. This also provides
+us a distance calculation for the nearest neighbor.
+
+
+```{r}
+locs_na <- tbl_percent_locs %>% 
+  dplyr::filter(is.na(polyid)) %>% 
+  sf::st_coordinates()
+
+polys_mat <- akpvpolys_cent %>% 
+  sf::st_coordinates()
+
+library(nabor)
+
+locs_poly_nn <- knn(data=polys_mat, query=locs_na, k = 1) %>% 
+  purrr::map(as_tibble) %>% dplyr::bind_cols() %>% 
+  dplyr::rename(poly_idx = V1, nn_dist = V11) %>% 
+  dplyr::mutate(polyid = akpvpolys_cent$polyid[poly_idx],
+                station = akpvpolys_cent$station[poly_idx]) %>% 
+  dplyr::select(-poly_idx)
+
+locs_na <- tbl_percent_locs %>% 
+  dplyr::filter(is.na(polyid)) %>% 
+  dplyr::select(-c(polyid,station)) %>% 
+  dplyr::bind_cols(locs_poly_nn)
+
+tbl_percent_locs <- tbl_percent_locs %>% 
+  dplyr::filter(!is.na(polyid)) %>% 
+  dplyr::mutate(nn_dist = 0) %>% 
+  rbind(locs_na) %>% 
+  dplyr::arrange(speno,date_time)
+```
+
+
+## calculate tidal covariates
+
+At this point, we're ready to do our tidal calculations. We'll rely on the 
+`tidextractr` package (available from jmlondon/tidextracr on GitHub). This
+package requires installation of the XTide command line tool.
+
+We're going to take advantage of parallel processing using the `doFuture`
+package and the `foreach` package. To help with this, we'll first nest our
+data.
+
+```{r}
+tbl_percent_locs <- tbl_percent_locs %>% 
+  dplyr::group_by(speno,species,sex,age) %>% tidyr::nest()
+```
+
+
+Now, we'll calcualte the tidal statistics we are interested in and bind those
+back into `tbl_percent_locs`. This could take a while.
+
+```{r}
+library("doFuture")
+library("foreach")
+registerDoFuture()
+plan(multiprocess)
+
+get_tidestats <- function(tbl) {
+  tide_height <- foreach(i = 1:nrow(tbl)) %do% {
+    tidextractr::GetTideHeight(tbl$date_time[i], 
+                               tbl$station[i])
+  } %>% purrr::map_df(as_tibble) %>% 
+    dplyr::rename(tide_height = value)
+  
+  near_low <- foreach(i = 1:nrow(tbl)) %do% {
+    tidextractr::GetNearestLow(tbl$date_time[i], 
+                               tbl$station[i])
+  } %>% purrr::map_df(as_tibble) %>% 
+    dplyr::rename(nlow_height = height,
+                  nlow_time = time)
+  
+  dplyr::bind_cols(tbl,tide_height,near_low) %>% 
+    mutate(minutes_from_low = difftime(date_time,nlow_time) %>% 
+             as.numeric(units = "mins"))
+}
+
+library(tictoc)
+
+tic("get tidestats")
+tbl_percent_locs <- tbl_percent_locs %>% 
+  dplyr::mutate(data = foreach(i = 1:nrow(.)) %dopar% {
+    get_tidestats(data[[i]])
+  })
+toc()
+```
+
+```{r}
+usethis::use_data(tbl_percent_locs)
+```
+
+
+
