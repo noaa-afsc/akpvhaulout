@@ -20,7 +20,7 @@ abstract: >
   harbor seal haul-out behavior derived from telemetry deployments. The data
   for haul-out behavior are pulled from the `pephaulout` R data package. The
   tidal calculations are determined via the XTide library which must be 
-  installed along with the `tidextractr` package.
+  installed along with the `tidextractr` package (available on Github).
 output: 
   uswebr::html_uswds:
     number_sections: FALSE
@@ -36,6 +36,7 @@ output:
 library(pephaulout)
 library(tidextractr)
 library(tidyverse)
+library(furrr)
 ```
 
 ## percent timelines data w/ locations
@@ -83,8 +84,8 @@ that represents the centroids of each survey polygon.
 
 ```{r}
 library(sf)
-akpvpolys <- st_read_db(con, query = "SELECT * FROM surv_pv_cst.geo_polys",
-                       geom_column = 'geom') %>% 
+akpvpolys <- st_read(con, query = "SELECT * FROM surv_pv_cst.geo_polys where iliamna != 'Y'", 
+                     geom_column = 'geom') %>% 
   sf::st_transform(3571)
 akpvpolys_cent <- akpvpolys %>% sf::st_centroid()
 
@@ -100,11 +101,18 @@ tbl_percent_locs <- tbl_percent_locs %>%
 ```
 
 At this point, `tbl_percent_locs` has `polyid` and `station` assigned for any
-location that falls within a survey polygon. For the remaining locations, we'll
-need to convert the point coordinates to a matrix and then relay on the
-`nabor::knn()` function to determine the nearest neighbor. This also provides
-us a distance calculation for the nearest neighbor.
+location that falls within a survey polygon (polygons associated with Iliamna
+Lake are not included). Of these, we will want to separate out glacial fjord
+habitats as those will not have tidal covariates associated with them.
+For the remaining locations, we'll need to convert the point coordinates to a 
+matrix and then relay on the `nabor::knn()` function to determine the nearest 
+neighbor. This also provides us a distance calculation for the nearest neighbor.
 
+```{r}
+glacial_polys <- st_read(con, query = "SELECT * FROM surv_pv_cst.geo_polys where glacier_name IS NOT NULL", 
+                     geom_column = 'geom')
+tbl_percent_glacial <- tbl_percent_locs %>% dplyr::filter(polyid %in% glacial_polys$polyid)
+```
 
 ```{r}
 locs_na <- tbl_percent_locs %>% 
@@ -142,9 +150,8 @@ At this point, we're ready to do our tidal calculations. We'll rely on the
 `tidextractr` package (available from jmlondon/tidextracr on GitHub). This
 package requires installation of the XTide command line tool.
 
-We're going to take advantage of parallel processing using the `doFuture`
-package and the `foreach` package. To help with this, we'll first nest our
-data.
+We're going to take advantage of parallel processing using the `furrr`
+package. To help with this, we'll first nest our data.
 
 ```{r}
 tbl_percent_locs <- tbl_percent_locs %>% 
@@ -153,45 +160,50 @@ tbl_percent_locs <- tbl_percent_locs %>%
 
 
 Now, we'll calcualte the tidal statistics we are interested in and bind those
-back into `tbl_percent_locs`. This could take a while.
+back into `tbl_percent_locs`. This could take a while, but we will speed things
+up a bit by using the `furrr` package for parallel processing.
 
 ```{r}
-library("doFuture")
-library("foreach")
-registerDoFuture()
-plan(multiprocess)
 
-get_tidestats <- function(tbl) {
-  tide_height <- foreach(i = 1:nrow(tbl)) %do% {
-    tidextractr::GetTideHeight(tbl$date_time[i], 
-                               tbl$station[i])
-  } %>% purrr::map_df(as_tibble) %>% 
-    dplyr::rename(tide_height = value)
+create_tidestats <- function(tbl_data) {
+  get_tide_height <- purrr::possibly(tidextractr::GetTideHeight, 
+                                     otherwise = NA, quiet = FALSE)
+  get_nearest <- purrr::possibly(tidextractr::GetNearestLow, 
+                                 otherwise = NA, quiet = FALSE)
   
-  near_low <- foreach(i = 1:nrow(tbl)) %do% {
-    tidextractr::GetNearestLow(tbl$date_time[i], 
-                               tbl$station[i])
-  } %>% purrr::map_df(as_tibble) %>% 
-    dplyr::rename(nlow_height = height,
-                  nlow_time = time)
-  
-  dplyr::bind_cols(tbl,tide_height,near_low) %>% 
-    mutate(minutes_from_low = difftime(date_time,nlow_time) %>% 
-             as.numeric(units = "mins"))
+  tbl_data <- tbl_data %>%
+    dplyr::mutate(
+      tide_height = purrr::map2_dbl(tide_dt, station,
+                                    ~ get_tide_height(.x, .y)),
+      near_low = purrr::map2(tide_dt, station,
+                             ~ get_nearest(.x, .y)),
+      near_low_height = purrr::map_dbl(near_low, "height"),
+      near_low_time = purrr::map(near_low, "time") %>%
+        purrr::reduce(c)
+    ) %>% 
+    dplyr::filter(inherits(near_low_time,"POSIXct")) %>%
+    dplyr::mutate(
+      minutes_from_low = purrr::map2(tide_dt, near_low_time, 
+                                     ~ difftime(.x, .y, units = "mins")) %>%
+        as.numeric()
+    ) %>% 
+    dplyr::select(-(near_low))
 }
 
-library(tictoc)
+plan(multiprocess)
 
-tic("get tidestats")
 tbl_percent_locs <- tbl_percent_locs %>% 
-  dplyr::mutate(data = foreach(i = 1:nrow(.)) %dopar% {
-    get_tidestats(data[[i]])
-  })
-toc()
+  dplyr::mutate(data = furrr::future_map(data, create_tidestats)) 
+
 ```
 
+The last step is to create our final `tbl_percent_locs` and `tbl_percent_glacial`
+data objects.
+
 ```{r}
-usethis::use_data(tbl_percent_locs)
+tbl_percent_locs <- tbl_percent_locs %>% tidyr::unnest()
+usethis::use_data(tbl_percent_locs, overwrite = TRUE)
+usethis::use_data(tbl_percent_glacial, overwrite = TRUE)
 ```
 
 
