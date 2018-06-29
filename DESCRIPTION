@@ -11,3 +11,5 @@ Suggests:
     knitr,
     rmarkdown
 VignetteBuilder: knitr
+URL: https://github.com/jmlondon/akpvhaulout
+BugReports: https://github.com/jmlondon/akpvhaulout/issues
