@@ -1,9 +1,9 @@
 Package: akpvhaulout
-Version: 0.0.0.9000
-Title: What the Package Does (one line, title case)
-Description: What the package does (one paragraph).
-Authors@R: person("First", "Last", email = "first.last@example.com", role = c("aut", "cre"))
-License: What license is it under?
+Version: 0.1
+Title: akpvhaulout
+Description: Alaska harbor seal haul-out behavior data
+Authors@R: person("Josh", "London", email = "josh.london@noaa.gov", role = c("aut", "cre"))
+License: CC0
 Encoding: UTF-8
 LazyData: true
 ByteCompile: true
