@@ -24,6 +24,10 @@ abstract: >
 output: 
   uswebr::html_uswds:
     number_sections: FALSE
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r global-options, include=FALSE}
@@ -205,6 +209,3 @@ tbl_percent_locs <- tbl_percent_locs %>% tidyr::unnest()
 usethis::use_data(tbl_percent_locs, overwrite = TRUE)
 usethis::use_data(tbl_percent_glacial, overwrite = TRUE)
 ```
-
-
-
