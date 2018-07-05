@@ -58,7 +58,8 @@ tbl_percent_locs <- tbl_percent_locs %>%
   dplyr::ungroup() %>% 
   dplyr::filter(species == "Pv") %>% 
   dplyr::arrange(speno, date_time) %>% 
-  dplyr::mutate(tide_dt = date_time + lubridate::dhours(0.5)) 
+  dplyr::mutate(tide_dt = date_time + lubridate::dhours(0.5)) %>% 
+  sf::st_transform(3338)
 tbl_percent_locs %>% glimpse()
 ```
 
@@ -88,9 +89,9 @@ that represents the centroids of each survey polygon.
 
 ```{r}
 library(sf)
-akpvpolys <- st_read(con, query = "SELECT * FROM surv_pv_cst.geo_polys where iliamna != 'Y'", 
-                     geom_column = 'geom') %>% 
-  sf::st_transform(3571)
+akpvpolys <- st_read(con, 
+                     query = "SELECT * FROM surv_pv_cst.geo_polys where iliamna != 'Y'") %>% 
+  sf::st_transform(3338)
 akpvpolys_cent <- akpvpolys %>% sf::st_centroid()
 
 poly_idx <- tbl_percent_locs %>%
@@ -107,16 +108,21 @@ tbl_percent_locs <- tbl_percent_locs %>%
 At this point, `tbl_percent_locs` has `polyid` and `station` assigned for any
 location that falls within a survey polygon (polygons associated with Iliamna
 Lake are not included). Of these, we will want to separate out glacial fjord
-habitats as those will not have tidal covariates associated with them.
-For the remaining locations, we'll need to convert the point coordinates to a 
-matrix and then relay on the `nabor::knn()` function to determine the nearest 
-neighbor. This also provides us a distance calculation for the nearest neighbor.
+habitats as those will not have tidal covariates associated with them. The
+glacial polygons have a non NULL value in the `glacial_name` field. But, since
+we do want records that are nearest to glacial habitat also associated with
+those polygons, we will wait to separate out the glacial polygons until after
+the nearest neighbors are assigned. For the remaining locations, we'll need to
+convert the point coordinates to a matrix and then relay on the `nabor::knn()`
+function to determine the nearest neighbor. This also provides us a distance
+calculation for the nearest neighbor.
 
 ```{r}
-glacial_polys <- st_read(con, query = "SELECT * FROM surv_pv_cst.geo_polys where glacier_name IS NOT NULL", 
-                     geom_column = 'geom')
-tbl_percent_glacial <- tbl_percent_locs %>% dplyr::filter(polyid %in% glacial_polys$polyid)
+glacial_polys <- st_read(con, query = "SELECT * FROM surv_pv_cst.geo_polys where glacier_name IS NOT NULL")
 ```
+
+Now that we have a list of our glacial fjord polygons, we can proceed with
+assignment of nearest neighbors.
 
 ```{r}
 locs_na <- tbl_percent_locs %>% 
@@ -145,8 +151,65 @@ tbl_percent_locs <- tbl_percent_locs %>%
   dplyr::mutate(nn_dist = 0) %>% 
   rbind(locs_na) %>% 
   dplyr::arrange(speno,date_time)
+
+tbl_percent_glacial <- tbl_percent_locs %>% 
+  dplyr::filter(polyid %in% glacial_polys$polyid) 
+
+tbl_percent_locs <- tbl_percent_locs %>% 
+  dplyr::filter(!polyid %in% glacial_polys$polyid)
 ```
 
+All of our haul-out behavior records are now associated with a tidal station.
+Let's take a moment and examine the distribution of distances from the haul-out
+behavior to the nearest survey unit.
+
+```{r}
+tbl_percent_locs %>% dplyr::filter(nn_dist > 50000) %>% 
+  ggplot(aes(nn_dist/1000)) + geom_density(fill = "#003366", size = 0) +
+  xlab("distance (km)") +
+  ggtitle("Distribution of nearest distance between haul-out location and survey units",
+          subtitle = "only showing distances > 50 km")
+```
+
+The majority of the records are within 250 km of a survey unit (and, thus, a
+tidal prediction location). Distances greater than 250 km likely represent
+unrealistic locations.
+
+Lets take a look at a map of those extreme records
+
+```{r}
+library(mapview)
+tbl_percent_locs %>% dplyr::filter(nn_dist > 250000) %>% 
+  mapview()
+```
+
+Given this map, it seems prudent to remove those records from the dataset and
+not include them as these locations are not realistic for harbor seals.
+
+```{r}
+tbl_percent_locs <- tbl_percent_locs %>% dplyr::filter(nn_dist <= 250000)
+```
+
+Now, let's take a look at the remaining locations (note, we have to sample
+in order to display w/out overplotting too much)
+
+```{r}
+library(nPacMaps)
+ak_base <- nPacMaps::alaska()
+
+locs <- tbl_percent_locs %>% dplyr::sample_frac(0.025) 
+
+ggplot() +
+  geom_sf(data = ak_base, size = 0, fill = "grey70") +
+  geom_sf(data = locs, size = 0.1, alpha = 0.2) +
+  scale_x_continuous(breaks = c(180, -160, -140)) +
+  ggtitle("Spatial distribution of haul-out behavior records",
+          subtitle = "note: only 2.5% of data shown")
+```
+
+Even some of these locations seem unrealistic (well inland). Downstream
+analysis of data should consider additional censoring or downweighting of
+records based on the `nn_dist` attribute.
 
 ## calculate tidal covariates
 

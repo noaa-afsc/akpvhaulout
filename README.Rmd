@@ -11,6 +11,9 @@ knitr::opts_chunk$set(
   fig.path = "man/figures/README-",
   out.width = "100%"
 )
+library(dplyr)
+library(sf)
+library(akpvhaulout)
 ```
 ## akpvhaulout
 
@@ -30,6 +33,29 @@ You can install the current version of `akpvhaulout` from github
 library(devtools)
 devtools::install_github('jmlondon/akpvhaulout')
 ```
+
+## Data Products and Structure
+
+### Coastal Habitat Data
+
+Haul-out behavior data associated with a coastal survey unit is included with
+this data object. These data all contain the tidal covariates of interest for
+each record. Glacial habitats are not included in this dataset.
+
+```{r coastal-data}
+tbl_percent_locs %>% glimpse()
+```
+
+### Glacial Habitat Data
+
+Haul-out behavior data associated with a glacial fjord habitat is included with
+this data object. These data contain none of the tidal covariates of interest for
+each record.
+
+```{r glacial-data}
+tbl_percent_glacial %>% glimpse()
+```
+
 
 #####Disclaimer
 
