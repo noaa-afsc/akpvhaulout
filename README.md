@@ -12,15 +12,6 @@ of publications, scientific analysis, or management decisions. Any use
 of these data should be done in coordination with the repository
 author(s).
 
-## Installation
-
-You can install the current version of `akpvhaulout` from github
-
-``` r
-library(pak)
-pak('noaa-afsc/akpvhaulout')
-```
-
 ## Data Products and Structure
 
 ### Coastal Habitat Data
