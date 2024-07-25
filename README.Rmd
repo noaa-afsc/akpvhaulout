@@ -11,9 +11,7 @@ knitr::opts_chunk$set(
   fig.path = "man/figures/README-",
   out.width = "100%"
 )
-library(dplyr)
-library(sf)
-library(akpvhaulout)
+
 ```
 ## akpvhaulout
 
@@ -30,33 +28,16 @@ these data should be done in coordination with the repository author(s).
 You can install the current version of `akpvhaulout` from github
 
 ```{r install-github, eval=FALSE}
-library(devtools)
-devtools::install_github('jmlondon/akpvhaulout')
+library(pak)
+pak('noaa-afsc/akpvhaulout')
 ```
 
 ## Data Products and Structure
 
 ### Coastal Habitat Data
 
-Haul-out behavior data associated with a coastal survey unit is included with
-this data object. These data all contain the tidal covariates of interest for
-each record. Glacial habitats are not included in this dataset.
-
-```{r coastal-data}
-tbl_percent_locs %>% glimpse()
-```
-
 ### Glacial Habitat Data
 
-Haul-out behavior data associated with a glacial fjord habitat is included with
-this data object. These data contain none of the tidal covariates of interest for
-each record.
-
-```{r glacial-data}
-tbl_percent_glacial %>% glimpse()
-```
-
-
-#####Disclaimer
+##### Disclaimer
 
 <sub>This repository is a scientific product and is not official communication of the Alaska Fisheries Science Center, the National Oceanic and Atmospheric Administration, or the United States Department of Commerce. All AFSC Marine Mammal Laboratory (AFSC-MML) GitHub project code is provided on an ‘as is’ basis and the user assumes responsibility for its use. AFSC-MML has relinquished control of the information and no longer has responsibility to protect the integrity, confidentiality, or availability of the information. Any claims against the Department of Commerce or Department of Commerce bureaus stemming from the use of this GitHub project will be governed by all applicable Federal law. Any reference to specific commercial products, processes, or services by service mark, trademark, manufacturer, or otherwise, does not constitute or imply their endorsement, recommendation or favoring by the Department of Commerce. The Department of Commerce seal and logo, or the seal and logo of a DOC bureau, shall not be used in any manner to imply endorsement of any commercial product or activity by DOC or the United States Government.</sub>
