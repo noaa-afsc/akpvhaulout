@@ -1,0 +1,47 @@
+---
+title: "Assigning Tidal Covariates to Harbor Seal Haul-out"
+execute:
+  echo: false
+  warning: false
+  message: false
+
+author:
+  - id: jml
+    name:
+      literal: Josh M. London
+    email: josh.london@noaa.gov
+    orcid: 0000-0002-3647-5046
+    attributes:
+      corresponding: true
+    affiliations: 
+      - ref: 1
+  - id: skh
+    name:
+      literal: Stacie M. Koslovsky
+    email: stacie.koslovsky@noaa.gov
+    affiliations: 
+      - ref: 1
+
+affiliations:
+  - id: 1
+    name: Alaska Fisheries Science Center, NOAA Fisheries
+    department: Marine Mammal Laboratory
+    address: 7600 Sand Point Way NE
+    city: Seattle
+    region: Washington
+    country: United States
+    postal-code: 98115
+    url: https://www.fisheries.noaa.gov/about/marine-mammal-laboratory
+---
+
+# Abstract
+
+This document describes the process of querying telemetry data and assigning
+tidal covariates to Alaska harbor seal haul-out behavior. The data for haul-out
+behavior are initially queried from the PEP central PostgreSQL database and
+tidy'd into an open dataset ready for downstream analysis. The tidal
+calculations are determined via the XTide library which must be installed along
+with the `tidextractr` package (available on Github).
+
+# Introduction
+
