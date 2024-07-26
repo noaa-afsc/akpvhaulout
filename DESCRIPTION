@@ -1,5 +1,5 @@
 Package: akpvhaulout
-Version: 0.1
+Version: 0.5
 Title: akpvhaulout
 Description: Alaska harbor seal haul-out behavior data
 Authors@R: person("Josh", "London", email = "josh.london@noaa.gov", role = c("aut", "cre"), comment = c(ORCID = "0000-0002-3647-5046"))

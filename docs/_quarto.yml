@@ -1,0 +1,21 @@
+project: 
+  type: manuscript
+  render: 
+    - "index.qmd"
+leading: 0.8em
+# Space between paragraphs
+spacing: 1.5em
+paper: "a4"
+# Number of columns for body text
+cols: 1
+# Typst language settings
+lang: "en"
+region: "US"
+# Font settings
+format: 
+  html:
+    fig-width: 8
+    fig-height: 6
+  preprint-typst:
+    mainfont: "TeX Gyre Pagella"
+    fontsize: 11pt
