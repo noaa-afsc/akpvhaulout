@@ -1,8 +1,10 @@
+source('get_data.R')
 
 publish_data <- function() {
   deploy <- get_deployments()
   locations <- get_locations(deploy)
   timelines <- get_timelines(deploy)
+  ssu <- get_survey_units()
 
   bucket <- gs_bucket("pep_storage", anonymous = FALSE)
   fs <- GcsFileSystem$create(anonymous = FALSE)

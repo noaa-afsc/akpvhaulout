@@ -3,8 +3,9 @@ library(dbplyr)
 library(dplyr)
 library(RPostgres)
 library(sf)
-library(arrow)
 library(geoarrow)
+library(arrow)
+library(arcgis)
 
 get_deployments <- function() {
   tryCatch(
@@ -33,7 +34,7 @@ get_deployments <- function() {
     dplyr::left_join(tbl_speno, by = c("speno", "species")) |>
     dplyr::collect()
 
-  dbDisconnect(con)
+  DBI::dbDisconnect(con)
 
   return(tbl_deploy)
 }
@@ -66,7 +67,7 @@ get_locations <- function(tbl_deploy = NULL) {
     ) |>
     dplyr::filter(species == "Harbor seal")
 
-  dbDisconnect(con)
+  DBI::dbDisconnect(con)
 
   return(locs_obs)
 }
@@ -97,8 +98,17 @@ get_timelines <- function(tbl_deploy = NULL) {
       .default = NA
     )) 
 
-  dbDisconnect(con)
+  DBI::dbDisconnect(con)
 
   return(tbl_timelines)
 }
 
+get_survey_units <- function() {
+  feature_url <- 'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/arcgis/rest/services/pv_cst_polys/FeatureServer'
+
+  ssu_sf <- arcgislayers::arc_open(feature_url) |> 
+    arcgislayers::get_layer(0) |> 
+    arcgislayers::arc_select()
+
+  return(ssu_sf)
+}
