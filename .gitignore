@@ -3,4 +3,6 @@
 .RData
 inst/doc
 
+akpv_timelines.rds
+
 /.quarto/
