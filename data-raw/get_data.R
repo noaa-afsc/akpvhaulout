@@ -1,6 +1,9 @@
 library(DBI)
 library(dbplyr)
 library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
 library(RPostgres)
 library(sf)
 library(geoarrow)
@@ -92,11 +95,7 @@ get_timelines <- function(tbl_deploy = NULL) {
   tbl_timelines <- dplyr::tbl(con, in_schema("telem", "tbl_wc_histos_timeline_qa")) |>
     dplyr::collect() |> 
     dplyr::left_join(tbl_deploy, by = c("deployid")) |>
-    dplyr::filter(species %in% c("Pv")) |>
-    dplyr::mutate(species = case_when(
-      species == "Pv" ~ "Harbor seal",
-      .default = NA
-    )) 
+    dplyr::filter(species %in% c("Harbor seal")) 
 
   DBI::dbDisconnect(con)
 
@@ -104,11 +103,31 @@ get_timelines <- function(tbl_deploy = NULL) {
 }
 
 get_survey_units <- function() {
-  feature_url <- 'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/arcgis/rest/services/pv_cst_polys/FeatureServer'
+  # can't pull from arcgis b/c lacks station name and other columns
+  # feature_url <- 'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/arcgis/rest/services/pv_cst_polys/FeatureServer'
 
-  ssu_sf <- arcgislayers::arc_open(feature_url) |> 
-    arcgislayers::get_layer(0) |> 
-    arcgislayers::arc_select()
+  # ssu_sf <- arcgislayers::arc_open(feature_url) |> 
+  #   arcgislayers::get_layer(0) |> 
+  #   arcgislayers::arc_select()
+  tryCatch(
+    {
+      con <- dbConnect(
+        RPostgres::Postgres(),
+        dbname = "pep",
+        host = Sys.getenv("PEP_PG_IP"),
+        user = keyringr::get_kc_account("pgpep_londonj"),
+        password = keyringr::decrypt_kc_pw("pgpep_londonj")
+      )
+    },
+    error = function(cond) {
+      print("Unable to connect to Database.")
+    }
+  )
+
+  ssu_sf <- sf::st_read(con, Id("surv_pv_cst", "geo_polys")) |>
+    dplyr::collect()
+
+  DBI::dbDisconnect(con)
 
   return(ssu_sf)
 }

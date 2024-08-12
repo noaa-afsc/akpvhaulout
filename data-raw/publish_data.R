@@ -1,4 +1,4 @@
-source('get_data.R')
+source(here::here('data-raw/get_data.R'))
 
 publish_data <- function() {
   deploy <- get_deployments()
@@ -11,4 +11,5 @@ publish_data <- function() {
   write_parquet(deploy, "gs://pep_storage/josh-london/akpvhaulout/deploy.parquet")
   write_parquet(locations,"gs://pep_storage/josh-london/akpvhaulout/locations.parquet")
   write_parquet(timelines,"gs://pep_storage/josh-london/akpvhaulout/timelines.parquet")
+  write_parquet(ssu,"gs://pep_storage/josh-london/akpvhaulout/ssu.parquet")
 }
